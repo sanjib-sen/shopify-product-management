@@ -147,7 +147,6 @@ export async function createServer(
       req.params.after,
       req.params.cursor
     );
-    console.log(products.body.data.products.edges);
     res.status(status).send(products.body.data.products);
   });
 

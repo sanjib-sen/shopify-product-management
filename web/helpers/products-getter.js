@@ -11,7 +11,6 @@ export async function productsGetter(session, count, next, cursor) {
   }
   let queryString = "";
 
-  console.log(next);
   if (next == "true") {
     queryString = `{
         products (first: ${count}, after: ${cursor}) {
@@ -51,6 +50,9 @@ export async function productsGetter(session, count, next, cursor) {
                   }
               }
               totalVariants
+              featuredImage {
+                url
+              }
             }
           }
           pageInfo {
