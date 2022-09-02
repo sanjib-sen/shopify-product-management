@@ -83,12 +83,6 @@ export default function HomePage() {
   return (
     <Page title="Product Info">
       <Card>
-        {/* <DataTable
-          columnContentTypes={["text", "numeric", "numeric"]}
-          headings={["Product", "Price", "Number of Variants"]}
-          rows={isLoadingData ? [] : populateTable()}
-        /> */}
-
         <IndexTable
           resourceName={resourceName}
           itemCount={isLoadingData ? 0 : products.length}
