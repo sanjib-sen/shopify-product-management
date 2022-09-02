@@ -1,48 +1,41 @@
-import { TitleBar, Loading } from "@shopify/app-bridge-react";
-import {
-  Card,
-  EmptyState,
-  Layout,
-  Page,
-  SkeletonBodyText,
-  DataTable,
-} from "@shopify/polaris";
-
+import { Card, Page, DataTable, Pagination } from "@shopify/polaris";
+import { useState } from "react";
 import { useAppQuery } from "../hooks";
 
 export default function HomePage() {
-  const { data, isLoading: isLoading } = useAppQuery({
-    url: "/api/products",
+  const [cursor, setCursor] = useState(null);
+  const [next, setNext] = useState(true);
+  const {
+    data,
+    refetch: refetchProducts,
+    isLoading: isLoadingData,
+  } = useAppQuery({
+    url: `/api/products/5/${next}/${cursor}`,
   });
 
-  const dataTable = [];
-
-  if (data) {
-    data.map((d, index) => {
-      console.log(d, index);
-      const singleRow = [];
-      singleRow.push(d.node.title);
-      singleRow.push(`${d.node.priceRangeV2.minVariantPrice.amount} USD`);
-      singleRow.push(d.node.totalVariants);
-      dataTable.push(singleRow);
-    });
-  }
-
-  const loadingMarkup = isLoading ? (
-    <Card sectioned>
-      <Loading />
-      <SkeletonBodyText />
-    </Card>
-  ) : null;
-
-  const emptyStateMarkup =
-    !isLoading && !data?.length ? (
-      <Card sectioned>
-        <EmptyState heading="Show products">
-          <p>Please create some products first.</p>
-        </EmptyState>
-      </Card>
-    ) : null;
+  const populateTable = () => {
+    const dataTable = [];
+    if (data && !isLoadingData) {
+      data.edges.map((d) => {
+        const singleRow = [];
+        singleRow.push(d.node.title);
+        singleRow.push(`${d.node.priceRangeV2.minVariantPrice.amount} USD`);
+        singleRow.push(d.node.totalVariants);
+        dataTable.push(singleRow);
+      });
+    }
+    return dataTable;
+  };
+  const handleNextPopulate = async () => {
+    setCursor(data.pageInfo.endCursor);
+    setNext(true);
+    await refetchProducts();
+  };
+  const handlePreviousPopulate = async () => {
+    setCursor(data.pageInfo.startCursor);
+    setNext(false);
+    await refetchProducts();
+  };
 
   return (
     <Page title="Product Info">
@@ -50,9 +43,17 @@ export default function HomePage() {
         <DataTable
           columnContentTypes={["text", "numeric", "numeric"]}
           headings={["Product", "Price", "Number of Variants"]}
-          rows={dataTable}
+          rows={isLoadingData ? [] : populateTable()}
         />
       </Card>
+      <Pagination
+        hasPrevious={
+          !isLoadingData && data ? data.pageInfo.hasPreviousPage : false
+        }
+        onPrevious={handlePreviousPopulate}
+        hasNext={!isLoadingData && data ? data.pageInfo.hasNextPage : false}
+        onNext={handleNextPopulate}
+      />
     </Page>
   );
 }

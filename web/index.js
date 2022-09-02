@@ -134,15 +134,21 @@ export async function createServer(
     res.status(status).send({ success: status === 200, error });
   });
 
-  app.get("/api/products", async (req, res) => {
+  app.get("/api/products/:count/:after/:cursor", async (req, res) => {
     const session = await Shopify.Utils.loadCurrentSession(
       req,
       res,
       app.get("use-online-tokens")
     );
     let status = 200;
-    const products = await productsGetter(session);
-    res.status(status).send(products.body.data.products.edges);
+    const products = await productsGetter(
+      session,
+      req.params.count,
+      req.params.after,
+      req.params.cursor
+    );
+    console.log(products.body.data.products.edges);
+    res.status(status).send(products.body.data.products);
   });
 
   // All endpoints after this point will have access to a request.body
