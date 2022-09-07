@@ -1,7 +1,6 @@
 import {
   Card,
   Page,
-  DataTable,
   Pagination,
   IndexTable,
   useIndexResourceState,
@@ -11,10 +10,21 @@ import {
 import { useState } from "react";
 import { useAppQuery } from "../hooks";
 import { ImageMajor } from "@shopify/polaris-icons";
+import { useNavigate } from "@shopify/app-bridge-react";
 
 export default function HomePage() {
   const [cursor, setCursor] = useState(null);
   const [next, setNext] = useState(true);
+  const navigate = useNavigate();
+
+  // const {
+  //   data: metafield_data,
+  //   refetch: mf_refetch,
+  //   isLoading: mfIsLoading,
+  // } = useAppQuery({
+  //   url: "/api/metafields",
+  // });
+
   const {
     data,
     refetch: refetchProducts,
@@ -41,6 +51,27 @@ export default function HomePage() {
 
   const { selectedResources, allResourcesSelected, handleSelectionChange } =
     useIndexResourceState(products);
+
+  const promotedBulkActions = [
+    {
+      content: "Read Metafields",
+      onAction: () => {
+        const ids = [];
+        selectedResources.map((r) => ids.push(r.split("/")[4]));
+        const idStr = ids.join("-");
+        navigate(`/metafields/read/${idStr}`);
+      },
+    },
+    {
+      content: "Write Metafields",
+      onAction: () => {
+        const ids = [];
+        selectedResources.map((r) => ids.push(r.split("/")[4]));
+        const idStr = ids.join("-");
+        navigate(`/metafields/write/${idStr}`);
+      },
+    },
+  ];
   const rowMarkup = products.map((d, index) => (
     <IndexTable.Row
       id={d.id}
@@ -64,8 +95,6 @@ export default function HomePage() {
     </IndexTable.Row>
   ));
 
-  console.log(rowMarkup);
-
   const resourceName = {
     singular: "product",
     plural: "products",
@@ -80,6 +109,9 @@ export default function HomePage() {
     setNext(false);
     await refetchProducts();
   };
+
+  // console.log(selectedResources);
+
   return (
     <Page title="Product Info">
       <Card>
@@ -90,6 +122,7 @@ export default function HomePage() {
             allResourcesSelected ? "All" : selectedResources.length
           }
           onSelectionChange={handleSelectionChange}
+          promotedBulkActions={promotedBulkActions}
           headings={[
             { title: "Image" },
             { title: "Name" },

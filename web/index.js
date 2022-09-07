@@ -3,14 +3,18 @@ import { join } from "path";
 import { readFileSync } from "fs";
 import express from "express";
 import cookieParser from "cookie-parser";
-import { Shopify, LATEST_API_VERSION } from "@shopify/shopify-api";
+import { Shopify, LATEST_API_VERSION, ApiVersion } from "@shopify/shopify-api";
 
 import applyAuthMiddleware from "./middleware/auth.js";
 import verifyRequest from "./middleware/verify-request.js";
 import { setupGDPRWebHooks } from "./gdpr.js";
 import productCreator from "./helpers/product-creator.js";
 import redirectToAuth from "./helpers/redirect-to-auth.js";
-import { productsGetter } from "./helpers/products-getter.js";
+import {
+  productsGetter,
+  productGetterNode,
+} from "./helpers/products-getter.js";
+import { metafieldCreator } from "./helpers/metafield-creater.js";
 import { BillingInterval } from "./helpers/ensure-billing.js";
 import { AppInstallations } from "./app_installations.js";
 
@@ -30,7 +34,7 @@ Shopify.Context.initialize({
   SCOPES: process.env.SCOPES.split(","),
   HOST_NAME: process.env.HOST.replace(/https?:\/\//, ""),
   HOST_SCHEME: process.env.HOST.split("://")[0],
-  API_VERSION: LATEST_API_VERSION,
+  API_VERSION: ApiVersion.Unstable,
   IS_EMBEDDED_APP: true,
   // This should be replaced with your preferred storage strategy
   SESSION_STORAGE: new Shopify.Session.SQLiteSessionStorage(DB_PATH),
@@ -147,8 +151,50 @@ export async function createServer(
       req.params.after,
       req.params.cursor
     );
+
     res.status(status).send(products.body.data.products);
   });
+
+  app.get("/api/product/:ids", async (req, res) => {
+    const session = await Shopify.Utils.loadCurrentSession(
+      req,
+      res,
+      app.get("use-online-tokens")
+    );
+    let status = 200;
+
+    const productIds = req.params.ids.split("-");
+    const ids = [];
+    productIds.map((p) => {
+      const newStr = "gid://shopify/Product/" + p;
+      ids.push(newStr);
+    });
+
+    const products = await productGetterNode(session, ids);
+    res.status(status).send(products);
+  });
+
+  app.get(
+    "/api/metafields/create/:productId/:namespace/:key/:value",
+    async (req, res) => {
+      const session = await Shopify.Utils.loadCurrentSession(
+        req,
+        res,
+        app.get("use-online-tokens")
+      );
+      let status = 200;
+
+      const newStr = "gid://shopify/Product/" + req.params.productId;
+      await metafieldCreator(
+        session,
+        newStr,
+        req.params.namespace,
+        req.params.key,
+        req.params.value
+      );
+      res.status(status);
+    }
+  );
 
   // All endpoints after this point will have access to a request.body
   // attribute, as a result of the express.json() middleware

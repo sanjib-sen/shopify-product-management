@@ -24,6 +24,16 @@ export async function productsGetter(session, count, next, cursor) {
                   }
               }
               totalVariants
+              metafields(first:10){
+                edges{
+                  node{
+                    id
+                    key
+                    namespace
+                    value
+                  }
+                }
+              }
               featuredImage {
                 url
               }
@@ -71,4 +81,39 @@ export async function productsGetter(session, count, next, cursor) {
     },
   });
   return response;
+}
+
+export async function productGetterNode(session, ids) {
+  const client = new Shopify.Clients.Graphql(session.shop, session.accessToken);
+  const queryString = `query Products($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Product {
+        title
+        featuredImage {
+          url
+        }
+        metafields(first:10){
+          edges{
+            node{
+              id
+              key
+              namespace
+              value
+            }
+          }
+        }
+      }
+    }
+  }`;
+
+  const response = await client.query({
+    data: {
+      query: queryString,
+      variables: {
+        ids: ids,
+      },
+    },
+  });
+
+  return response.body.data.nodes;
 }
