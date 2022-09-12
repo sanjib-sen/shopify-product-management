@@ -6,6 +6,9 @@ import {
   useIndexResourceState,
   TextStyle,
   Thumbnail,
+  Button,
+  Stack,
+  Layout,
 } from "@shopify/polaris";
 import { useState } from "react";
 import { useAppQuery } from "../hooks";
@@ -114,33 +117,49 @@ export default function HomePage() {
 
   return (
     <Page title="Product Info">
-      <Card>
-        <IndexTable
-          resourceName={resourceName}
-          itemCount={isLoadingData ? 0 : products.length}
-          selectedItemsCount={
-            allResourcesSelected ? "All" : selectedResources.length
-          }
-          onSelectionChange={handleSelectionChange}
-          promotedBulkActions={promotedBulkActions}
-          headings={[
-            { title: "Image" },
-            { title: "Name" },
-            { title: "Price" },
-            { title: "Number of Variants" },
-          ]}
-        >
-          {isLoadingData ? [] : rowMarkup}
-        </IndexTable>
-      </Card>
-      <Pagination
-        hasPrevious={
-          !isLoadingData && data ? data.pageInfo.hasPreviousPage : false
-        }
-        onPrevious={handlePreviousPopulate}
-        hasNext={!isLoadingData && data ? data.pageInfo.hasNextPage : false}
-        onNext={handleNextPopulate}
-      />
+      <Layout>
+        <Layout.Section>
+          {" "}
+          <Button
+            textAlign="right"
+            onClick={() => {
+              navigate(`/logs`);
+            }}
+          >
+            Show Logs
+          </Button>
+        </Layout.Section>
+        <Layout.Section>
+          {" "}
+          <Card>
+            <IndexTable
+              resourceName={resourceName}
+              itemCount={isLoadingData ? 0 : products.length}
+              selectedItemsCount={
+                allResourcesSelected ? "All" : selectedResources.length
+              }
+              onSelectionChange={handleSelectionChange}
+              promotedBulkActions={promotedBulkActions}
+              headings={[
+                { title: "Image" },
+                { title: "Name" },
+                { title: "Price" },
+                { title: "Number of Variants" },
+              ]}
+            >
+              {isLoadingData ? [] : rowMarkup}
+            </IndexTable>
+          </Card>
+          <Pagination
+            hasPrevious={
+              !isLoadingData && data ? data.pageInfo.hasPreviousPage : false
+            }
+            onPrevious={handlePreviousPopulate}
+            hasNext={!isLoadingData && data ? data.pageInfo.hasNextPage : false}
+            onNext={handleNextPopulate}
+          />
+        </Layout.Section>
+      </Layout>
     </Page>
   );
 }

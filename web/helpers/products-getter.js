@@ -117,3 +117,29 @@ export async function productGetterNode(session, ids) {
 
   return response.body.data.nodes;
 }
+
+export async function productGetter(session, id) {
+  const client = new Shopify.Clients.Graphql(session.shop, session.accessToken);
+  const queryString = `{
+    product(id: "${id}") {
+      metafields(first:25){
+        edges{
+          node{
+            id
+            key
+            namespace
+            value
+          }
+        }
+      }
+  }
+}`;
+
+  const response = await client.query({
+    data: {
+      query: queryString,
+    },
+  });
+
+  return response.body.data.product.metafields.edges;
+}

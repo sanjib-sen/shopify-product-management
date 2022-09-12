@@ -4,7 +4,7 @@ import { readFileSync } from "fs";
 import express from "express";
 import cookieParser from "cookie-parser";
 import { Shopify, LATEST_API_VERSION, ApiVersion } from "@shopify/shopify-api";
-
+import bodyParser from "body-parser";
 import applyAuthMiddleware from "./middleware/auth.js";
 import verifyRequest from "./middleware/verify-request.js";
 import { setupGDPRWebHooks } from "./gdpr.js";
@@ -12,11 +12,18 @@ import productCreator from "./helpers/product-creator.js";
 import redirectToAuth from "./helpers/redirect-to-auth.js";
 import {
   productsGetter,
+  productGetter,
   productGetterNode,
 } from "./helpers/products-getter.js";
-import { metafieldCreator } from "./helpers/metafield-creater.js";
+import {
+  metafieldCreator,
+  metafieldCreatorLogger,
+} from "./helpers/metafield-creater.js";
 import { BillingInterval } from "./helpers/ensure-billing.js";
 import { AppInstallations } from "./app_installations.js";
+import { convertIdToProduct } from "./helpers/convertIds.js";
+import { compareProductJSON } from "./helpers/compareProduct.js";
+import { metafieldGetter } from "./helpers/metafield-getter.js";
 
 const USE_ONLINE_TOKENS = false;
 
@@ -28,22 +35,24 @@ const PROD_INDEX_PATH = `${process.cwd()}/frontend/dist/`;
 
 const DB_PATH = `${process.cwd()}/database.sqlite`;
 
+let LOGS = {};
+
 Shopify.Context.initialize({
   API_KEY: process.env.SHOPIFY_API_KEY,
   API_SECRET_KEY: process.env.SHOPIFY_API_SECRET,
   SCOPES: process.env.SCOPES.split(","),
   HOST_NAME: process.env.HOST.replace(/https?:\/\//, ""),
   HOST_SCHEME: process.env.HOST.split("://")[0],
-  API_VERSION: ApiVersion.Unstable,
+  API_VERSION: LATEST_API_VERSION,
   IS_EMBEDDED_APP: true,
   // This should be replaced with your preferred storage strategy
   SESSION_STORAGE: new Shopify.Session.SQLiteSessionStorage(DB_PATH),
 });
 
-Shopify.Webhooks.Registry.addHandler("APP_UNINSTALLED", {
-  path: "/api/webhooks",
+Shopify.Webhooks.Registry.addHandler("PRODUCTS_UPDATE", {
+  path: "/api/webhooks/products/update",
   webhookHandler: async (_topic, shop, _body) => {
-    await AppInstallations.delete(shop);
+    await AppInstallations.print(shop);
   },
 });
 
@@ -85,16 +94,97 @@ export async function createServer(
   // Shopify.Webhooks.Registry.process().
   // See https://github.com/Shopify/shopify-api-node/blob/main/docs/usage/webhooks.md#note-regarding-use-of-body-parsers
   // for more details.
-  app.post("/api/webhooks", async (req, res) => {
-    try {
-      await Shopify.Webhooks.Registry.process(req, res);
-      console.log(`Webhook processed, returned status code 200`);
-    } catch (e) {
-      console.log(`Failed to process webhook: ${e.message}`);
-      if (!res.headersSent) {
-        res.status(500).send(e.message);
+
+  app.use(bodyParser.raw({ type: "application/json" }));
+
+  // Webhooks
+  app.post("/api/webhooks/products/update", async (req, res) => {
+    console.log("Webhook heard!");
+    // Verify
+    const hmac = req.header("X-Shopify-Hmac-Sha256");
+    const topic = req.header("X-Shopify-Topic");
+    const shop = req.header("X-Shopify-Shop-Domain");
+
+    const verified = verifyWebhook(req.body, hmac);
+
+    if (!verified) {
+      console.log("Failed to verify the incoming request.");
+      res.status(401).send("Could not verify request.");
+      return;
+    }
+
+    const data = req.body.toString();
+    const payload = JSON.parse(data);
+    const session = await Shopify.Utils.loadOfflineSession(shop);
+    const productId = convertIdToProduct(payload.id);
+    res.status(200).send("OK");
+    const metafields = await productGetter(session, productId);
+    let oldProduct;
+    for (let m in metafields) {
+      if (metafields[m].node.namespace == "product_json") {
+        oldProduct = JSON.parse(metafields[m].node.value);
       }
     }
+    const diff = compareProductJSON(payload, oldProduct);
+    const jsonForLogger = {
+      updatedAt: payload.updated_at,
+      name: payload.title,
+      atr: diff,
+    };
+    const prevLogs = JSON.parse(await metafieldGetter(session));
+    prevLogs.push(jsonForLogger);
+
+    // await metafieldCreator(
+    //   session,
+    //   productId,
+    //   "product_json",
+    //   payload.id,
+    //   payload,
+    //   "json_string"
+    // );
+
+    const clean = [{}];
+    await metafieldCreatorLogger(session, prevLogs);
+
+    LOGS = prevLogs;
+    // console.log(
+    //   `Verified webhook request. Shop: ${shop} Topic: ${topic} \n Payload: \n ${data}`
+    // );
+  });
+
+  // Verify incoming webhook.
+  function verifyWebhook(payload, hmac) {
+    return true;
+  }
+
+  app.post("/api/webhooks/products/create", async (req, res) => {
+    console.log("Webhook heard!");
+    // Verify
+    const hmac = req.header("X-Shopify-Hmac-Sha256");
+    const topic = req.header("X-Shopify-Topic");
+    const shop = req.header("X-Shopify-Shop-Domain");
+
+    const verified = verifyWebhook(req.body, hmac);
+
+    if (!verified) {
+      console.log("Failed to verify the incoming request.");
+      res.status(401).send("Could not verify request.");
+      return;
+    }
+
+    const data = req.body.toString();
+    const payload = JSON.parse(data);
+    const session = await Shopify.Utils.loadOfflineSession(shop);
+    const productId = convertIdToProduct(payload.id);
+    res.status(200).send("OK");
+    await metafieldCreator(
+      session,
+      productId,
+      "product_json",
+      payload.id,
+      payload,
+      "json_string"
+    );
   });
 
   // All endpoints after this point will require an active session
@@ -163,15 +253,16 @@ export async function createServer(
     );
     let status = 200;
 
-    const productIds = req.params.ids.split("-");
-    const ids = [];
-    productIds.map((p) => {
-      const newStr = "gid://shopify/Product/" + p;
-      ids.push(newStr);
-    });
+    const ids = convertIdToProduct(req.params.ids, true);
 
     const products = await productGetterNode(session, ids);
     res.status(status).send(products);
+  });
+
+  app.get("/api/logger", async (req, res) => {
+    let status = 200;
+    console.log("Logs: ", LOGS);
+    res.status(status).send(LOGS);
   });
 
   app.get(
@@ -184,13 +275,36 @@ export async function createServer(
       );
       let status = 200;
 
-      const newStr = "gid://shopify/Product/" + req.params.productId;
+      const id = convertIdToProduct(req.params.productId);
       await metafieldCreator(
         session,
-        newStr,
+        id,
         req.params.namespace,
         req.params.key,
         req.params.value
+      );
+      res.status(status);
+    }
+  );
+
+  app.get(
+    "/api/metafields/create/:productId/:namespace/:key/:value/:type",
+    async (req, res) => {
+      const session = await Shopify.Utils.loadCurrentSession(
+        req,
+        res,
+        app.get("use-online-tokens")
+      );
+      let status = 200;
+
+      const id = convertIdToProduct(req.params.productId);
+      await metafieldCreator(
+        session,
+        id,
+        req.params.namespace,
+        req.params.key,
+        req.params.value,
+        req.params.type
       );
       res.status(status);
     }
